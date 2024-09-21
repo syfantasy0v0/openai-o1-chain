@@ -11,9 +11,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ message: 'Missing required parameters' });
   }
 
-  const openaiApi = axios.create({
+  const apiClient = axios.create({
     baseURL: baseUrl,
-    headers: { 'Authorization': `Bearer ${apiKey}` }
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+      'Content-Type': 'application/json'
+    },
+    timeout: 50000 // 50 seconds timeout
   });
 
   try {
@@ -39,17 +44,16 @@ Example of a valid JSON response:
 
     for (let i = 0; i < 5; i++) {
       const startTime = Date.now();
-      const completion = await openaiApi.post('/chat/completions', {
+      const completion = await apiClient.post('/v1/chat/completions', {
         model: model,
-        messages: messages,
-        max_tokens: 500,
-        temperature: 0.7,
+        messages: messages
       });
       const endTime = Date.now();
 
       let stepData;
       try {
-        stepData = JSON.parse(completion.data.choices[0].message.content);
+        const responseContent = completion.data.choices[0].message.content;
+        stepData = JSON.parse(responseContent);
       } catch (error) {
         console.error('Failed to parse JSON:', completion.data.choices[0].message.content);
         stepData = {
@@ -74,6 +78,10 @@ Example of a valid JSON response:
     res.status(200).json({ steps, totalTime });
   } catch (error) {
     console.error('Error:', error.response?.data || error.message);
-    res.status(500).json({ message: 'Failed to generate response', error: error.response?.data || error.message });
+    res.status(500).json({ 
+      message: 'Failed to generate response', 
+      error: error.response?.data || error.message,
+      stack: error.stack
+    });
   }
 }

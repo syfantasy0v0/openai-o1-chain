@@ -21,17 +21,12 @@ export default async function handler(req, res) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  const systemPrompt = `你是一位专家级AI助手，用中文一步步解释你的推理过程。对于每一步：
-1. 提供一个标题，描述你在这一步要做什么。
-2. 解释这一步的推理或分析过程。
-3. 决定是否需要另一步，或是否准备好给出最终答案。
-4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
-
-在给出最终答案之前，至少使用3个步骤。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际上要用不同的方法重新审视。在你的分析中使用最佳实践。`;
+  const systemPrompt = `You are an expert AI assistant that explains your reasoning step by step. For each step, provide a title that describes what you're doing in that step, along with the content. Decide if you need another step or if you're ready to give the final answer. Respond in JSON format with 'title', 'content', and 'next_action' (either 'continue' or 'final_answer') keys. USE AS MANY REASONING STEPS AS POSSIBLE. AT LEAST 3. BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, INCLUDE EXPLORATION OF ALTERNATIVE ANSWERS. CONSIDER YOU MAY BE WRONG, AND IF YOU ARE WRONG IN YOUR REASONING, WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES.`;
 
   let messages = [
     { role: "system", content: systemPrompt },
     { role: "user", content: query },
+    { role: "assistant", content: "Thank you! I will now think step by step following my instructions, starting at the beginning after decomposing the problem" }
   ];
 
   const startTime = Date.now();
@@ -41,7 +36,7 @@ export default async function handler(req, res) {
     let stepCount = 0;
     let continueReasoning = true;
 
-    while (continueReasoning && stepCount < 5) {
+    while (continueReasoning && stepCount < 10) {
       stepCount++;
       const stepStartTime = Date.now();
 
@@ -55,7 +50,7 @@ export default async function handler(req, res) {
           model: model,
           messages: messages,
           temperature: 0.7,
-          max_tokens: 500,
+          max_tokens: 1000,
         }),
       });
 

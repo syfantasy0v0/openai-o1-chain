@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Head from 'next/head';
 import styles from '../styles/Home.module.css';
 
@@ -47,13 +47,13 @@ export default function Home() {
   return (
     <div className={styles.container}>
       <Head>
-        <title>OpenAI 推理链</title>
+        <title>OpenAI 多步推理链</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <main className={styles.main}>
         <h1 className={styles.title}>
-          OpenAI 推理链
+          OpenAI 多步推理链
         </h1>
 
         <form onSubmit={handleSubmit} className={styles.form}>

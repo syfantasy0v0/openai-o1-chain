@@ -67,13 +67,21 @@ export default async function handler(req, res) {
       const data = await response.json();
       const stepContent = data.choices[0].message.content;
 
+      console.log('Raw API response:', stepContent); // 添加这行来记录原始响应
+
       let stepData;
       try {
-        // Remove backticks if present at the start and end of the content
+        // Remove backticks and "json" tag if present
         const cleanedContent = stepContent.replace(/^```json\s*|\s*```$/g, '');
-        stepData = JSON.parse(cleanedContent);
+        // Remove any leading/trailing whitespace and normalize line breaks
+        const normalizedContent = cleanedContent.trim().replace(/\n/g, '\\n');
+        
+        console.log('Attempting to parse:', normalizedContent); // 添加这行来记录尝试解析的内容
+        
+        stepData = JSON.parse(normalizedContent);
       } catch (error) {
-        console.error('JSON解析失败:', stepContent);
+        console.error('JSON解析失败:', error);
+        console.error('失败的内容:', stepContent);
         stepData = {
           title: `第 ${stepCount} 步`,
           content: stepContent,

@@ -21,56 +21,76 @@ export default async function handler(req, res) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  try {
-    const systemPrompt = `你是一位专家级AI助手，用中文一步步解释你的推理过程。对于每一步：
+  const systemPrompt = `你是一位专家级AI助手，用中文一步步解释你的推理过程。对于每一步：
 1. 提供一个标题，描述你在这一步要做什么。
 2. 解释这一步的推理或分析过程。
 3. 决定是否需要另一步，或是否准备好给出最终答案。
 4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
 
-在给出最终答案之前，至少使用3个步骤。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际用不同的方法重新审视。在你的分析中使用最佳实践。`;
+在给出最终答案之前，至少使用3个步骤。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际上要用不同的方法重新审视。在你的分析中使用最佳实践。`;
 
-    let messages = [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: query },
-    ];
+  let messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: query },
+  ];
 
-    const startTime = Date.now();
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: messages,
-        stream: false,
-      }),
-    });
+  const startTime = Date.now();
+  let totalTime = 0;
 
-    const data = await response.json();
-    const endTime = Date.now();
-    const totalTime = (endTime - startTime) / 1000;
+  try {
+    let stepCount = 0;
+    let continueReasoning = true;
 
-    if (!response.ok) {
-      throw new Error(data.error?.message || 'API request failed');
-    }
+    while (continueReasoning && stepCount < 5) {
+      stepCount++;
+      const stepStartTime = Date.now();
 
-    const fullContent = data.choices[0].message.content;
-    console.log('Full API response:', fullContent);
+      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 500,
+        }),
+      });
 
-    // 提取所有有效的 JSON 对象
-    const jsonObjects = fullContent.match(/\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g) || [];
-    console.log('Extracted JSON objects:', jsonObjects);
-
-    for (let jsonStr of jsonObjects) {
-      try {
-        const step = JSON.parse(jsonStr);
-        sendEvent('step', step);
-      } catch (error) {
-        console.error('Failed to parse JSON object:', jsonStr);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'API request failed');
       }
+
+      const data = await response.json();
+      const stepContent = data.choices[0].message.content;
+      
+      let stepData;
+      try {
+        stepData = JSON.parse(stepContent);
+      } catch (error) {
+        console.error('Failed to parse JSON:', stepContent);
+        stepData = {
+          title: `第 ${stepCount} 步`,
+          content: stepContent,
+          next_action: 'continue'
+        };
+      }
+
+      sendEvent('step', stepData);
+
+      messages.push({ role: "assistant", content: JSON.stringify(stepData) });
+
+      if (stepData.next_action === "final_answer") {
+        continueReasoning = false;
+      } else {
+        messages.push({ role: "user", content: "请继续分析。" });
+      }
+
+      const stepEndTime = Date.now();
+      totalTime += (stepEndTime - stepStartTime) / 1000;
     }
 
     sendEvent('totalTime', { time: totalTime });

@@ -1,109 +1,79 @@
-import axios from 'axios';
+import { createHandler } from 'next-api-handler';  
+import { json } from 'micro';  
+import { Configuration, OpenAIApi } from 'openai';  
 
-const MAX_STEPS = 25; // Maximum number of reasoning steps
-const MAX_TOKENS_PER_STEP = 300; // Maximum tokens for each step
-const MAX_TOKENS_FINAL_ANSWER = 200; // Maximum tokens for final answer
+const configuration = new Configuration({  
+  apiKey: process.env.OPENAI_API_KEY,  // 确保您设置了环境变量  
+});  
+const openai = new OpenAIApi(configuration);  
 
-async function makeApiCall(apiClient, messages, max_tokens, is_final_answer = false) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const response = await apiClient.post('/v1/chat/completions', {
-        model: "gpt-3.5-turbo", // You can change this to the appropriate model
-        messages: messages,
-        max_tokens: max_tokens,
-        temperature: 0.2,
-      });
-      return JSON.parse(response.data.choices[0].message.content);
-    } catch (error) {
-      console.error(`Attempt ${attempt + 1} failed:`, error);
-      if (attempt === 2) {
-        if (is_final_answer) {
-          return { title: "Error", content: `Failed to generate final answer after 3 attempts. Error: ${error.message}` };
-        } else {
-          return { title: "Error", content: `Failed to generate step after 3 attempts. Error: ${error.message}`, next_action: "final_answer" };
-        }
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before retrying
-    }
-  }
-}
+async function apiHandler(req, res) {  
+  if (req.method === 'POST') {  
+    const { prompt } = await json(req);  
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
-  }
+    const messages = [  
+      { role: 'system', content: "您是一个AI助手，会逐步解释您的推理过程。" },  
+      { role: 'user', content: prompt }  
+    ];  
 
-  const { query, apiKey, model, baseUrl } = req.body;
+    const responseSteps = await generateResponse(messages);  
+    res.status(200).json(responseSteps);  
+  } else {  
+    res.setHeader('Allow', ['POST']);  
+    res.status(405).end(`不允许的方法 ${req.method}`);  
+  }  
+}  
 
-  if (!apiKey || !model || !baseUrl) {
-    return res.status(400).json({ message: 'Missing required parameters' });
-  }
+async function generateResponse(messages) {  
+  const steps = [];  
+  let attemptCount = 0;  
 
-  // Remove trailing slash from baseUrl if present
-  const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  while (attemptCount < 3) {  
+    try {  
+      const response = await openai.createChatCompletion({  
+        model: "gpt-3.5-turbo", // 或适合的其他模型  
+        messages: messages,  
+        max_tokens: 300,  
+        temperature: 0.2,  
+      });  
 
-  const apiClient = axios.create({
-    baseURL: cleanBaseUrl,
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    timeout: 55000 // 55 seconds timeout
-  });
+      const content = response.data.choices[0].message.content;  
+      steps.push(parseResponse(content));  
 
-  const systemPrompt = `You are an expert AI assistant that explains your reasoning step by step. For each step, provide a title that describes what you're doing in that step, along with the content. Decide if you need another step or if you're ready to give the final answer. Respond in JSON format with 'title', 'content', and 'next_action' (either 'continue' or 'final_answer') keys. USE AS MANY REASONING STEPS AS POSSIBLE. AT LEAST 3. BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, INCLUDE EXPLORATION OF ALTERNATIVE ANSWERS. CONSIDER YOU MAY BE WRONG, AND IF YOU ARE WRONG IN YOUR REASONING, WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES.`;
+      // 检查返回的步骤是否指示最终答案  
+      if (steps[steps.length - 1].next_action === 'final_answer') {  
+        break;  
+      }  
 
-  const messages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: query },
-    { role: "assistant", content: "Thank you! I will now think step by step following my instructions, starting at the beginning after decomposing the problem." }
-  ];
+      messages.push(response.data.choices[0].message); // 将助手的回复加入消息数列中  
 
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive'
-  });
+      attemptCount++;  
+    } catch (error) {  
+      if (attemptCount === 2) {  
+        return { error: `多次尝试失败: ${error.message}` };  
+      }  
+      attemptCount++;  
+    }  
+  }  
+  return steps;  
+}  
 
-  let step_count = 1;
-  let total_thinking_time = 0;
+function parseResponse(content) {  
+  // 用于解析助手的响应  
+  try {  
+    const responseJson = JSON.parse(content);  
+    return {  
+      title: responseJson.title || "未指定步骤",  
+      content: responseJson.content || "没有内容",  
+      next_action: responseJson.next_action || "继续"  
+    };  
+  } catch (error) {  
+    return {  
+      title: "解析错误",  
+      content: "无法解析助手的响应",  
+      next_action: "final_answer"  
+    };  
+  }  
+}  
 
-  try {
-    while (step_count <= MAX_STEPS) {
-      const start_time = Date.now();
-      const step_data = await makeApiCall(apiClient, messages, MAX_TOKENS_PER_STEP);
-      const end_time = Date.now();
-      const thinking_time = (end_time - start_time) / 1000;
-      total_thinking_time += thinking_time;
-
-      messages.push({ role: "assistant", content: JSON.stringify(step_data) });
-
-      res.write(`data: ${JSON.stringify({ ...step_data, step: step_count, thinking_time, total_thinking_time })}\n\n`);
-
-      if (step_data.next_action === "final_answer") {
-        break;
-      }
-
-      step_count++;
-    }
-
-    // Generate final answer
-    messages.push({ role: "user", content: "Please provide the final answer based on your reasoning above." });
-    
-    const start_time = Date.now();
-    const final_data = await makeApiCall(apiClient, messages, MAX_TOKENS_FINAL_ANSWER, true);
-    const end_time = Date.now();
-    const thinking_time = (end_time - start_time) / 1000;
-    total_thinking_time += thinking_time;
-
-    res.write(`data: ${JSON.stringify({ ...final_data, step: "Final Answer", thinking_time, total_thinking_time })}\n\n`);
-
-  } catch (error) {
-    console.error('Error:', error);
-    res.write(`data: ${JSON.stringify({ error: 'Failed to generate response', message: error.message })}\n\n`);
-  } finally {
-    res.write('event: close\n');
-    res.write(`data: ${JSON.stringify({ total_thinking_time })}\n\n`);
-    res.end();
-  }
-}
+export default createHandler(apiHandler);

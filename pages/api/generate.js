@@ -51,45 +51,33 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           model: model,
           messages: messages,
-          stream: true,
+          stream: false,  // 改为 false，不使用流式响应
         }),
       });
 
-      const parser = createParser(event => {
-        if (event.type === 'event') {
-          if (event.data !== '[DONE]') {
-            const data = JSON.parse(event.data);
-            const content = data.choices[0]?.delta?.content || '';
-            sendEvent('message', { content });
-          }
-        }
-      });
-
-      for await (const chunk of response.body) {
-        parser.feed(decoder.decode(chunk));
-      }
-
-      const endTime = Date.now();
-      totalTime += (endTime - startTime) / 1000;
+      const data = await response.json();
+      const content = data.choices[0].message.content;
 
       let stepData;
       try {
-        const lastMessage = messages[messages.length - 1].content;
-        stepData = typeof lastMessage === 'string' ? JSON.parse(lastMessage) : lastMessage;
+        stepData = JSON.parse(content);
       } catch (error) {
-        console.error('Failed to parse JSON:', messages[messages.length - 1].content);
+        console.error('Failed to parse JSON:', content);
         stepData = {
           title: `第 ${i + 1} 步`,
-          content: messages[messages.length - 1].content,
+          content: content,
           next_action: 'continue'
         };
       }
 
       sendEvent('step', stepData);
 
-      messages.push({ role: "assistant", content: stepData });
+      messages.push({ role: "assistant", content: JSON.stringify(stepData) });
 
       if (stepData.next_action === "final_answer") break;
+
+      const endTime = Date.now();
+      totalTime += (endTime - startTime) / 1000;
     }
 
     sendEvent('totalTime', totalTime);

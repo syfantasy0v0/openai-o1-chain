@@ -7,7 +7,7 @@ export default function Home() {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('gpt-4o');
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com');
-  const [response, setResponse] = useState('');
+  const [response, setResponse] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [totalTime, setTotalTime] = useState(null);
   const [error, setError] = useState(null);
@@ -15,7 +15,7 @@ export default function Home() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    setResponse('');
+    setResponse([]);
     setTotalTime(null);
     setError(null);
 
@@ -25,12 +25,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          query, 
-          apiKey, 
-          model,
-          baseUrl
-        }),
+        body: JSON.stringify({ query, apiKey, model, baseUrl }),
       });
 
       if (!res.ok) {
@@ -39,16 +34,7 @@ export default function Home() {
       }
 
       const data = await res.json();
-      
-      // 处理响应，无论是JSON还是纯文本
-      if (typeof data.response === 'object' && data.response.content) {
-        setResponse(data.response.content);
-      } else if (typeof data.response === 'string') {
-        setResponse(data.response);
-      } else {
-        setResponse(JSON.stringify(data.response));
-      }
-      
+      setResponse(data.steps);
       setTotalTime(data.totalTime);
     } catch (error) {
       console.error('Error:', error);
@@ -61,13 +47,13 @@ export default function Home() {
   return (
     <div className={styles.container}>
       <Head>
-        <title>AI 助手</title>
+        <title>OpenAI 推理链</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <main className={styles.main}>
         <h1 className={styles.title}>
-          AI 助手
+          OpenAI 推理链
         </h1>
 
         <form onSubmit={handleSubmit} className={styles.form}>
@@ -75,7 +61,7 @@ export default function Home() {
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder="输入您的 API 密钥"
+            placeholder="输入你的 API Key"
             className={styles.input}
             required
           />
@@ -83,7 +69,7 @@ export default function Home() {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="输入模型名称 (例如: deepseek-chat)"
+            placeholder="输入模型名称（例如：gpt-4o）"
             className={styles.input}
             required
           />
@@ -98,7 +84,7 @@ export default function Home() {
           <textarea
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="输入您的问题"
+            placeholder="输入你的问题"
             className={styles.textarea}
             required
           />
@@ -111,15 +97,15 @@ export default function Home() {
 
         {error && <p className={styles.error}>{error}</p>}
 
-        {response && (
-          <div className={styles.response}>
-            <h3>响应：</h3>
-            <p>{response}</p>
+        {response.map((step, index) => (
+          <div key={index} className={styles.step}>
+            <h3>{step.title}</h3>
+            <p>{step.content}</p>
           </div>
-        )}
+        ))}
 
         {totalTime !== null && (
-          <p className={styles.time}>总思考时间: {totalTime.toFixed(2)} 秒</p>
+          <p className={styles.time}>总思考时间：{totalTime.toFixed(2)} 秒</p>
         )}
       </main>
     </div>

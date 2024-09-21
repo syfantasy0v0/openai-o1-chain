@@ -47,13 +47,13 @@ export default function Home() {
   return (
     <div className={styles.container}>
       <Head>
-        <title>OpenAI 多步推理链</title>
+        <title>OpenAI 高级推理链</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <main className={styles.main}>
         <h1 className={styles.title}>
-          OpenAI 多步推理链
+          OpenAI 高级推理链
         </h1>
 
         <form onSubmit={handleSubmit} className={styles.form}>
@@ -99,9 +99,9 @@ export default function Home() {
 
         {response.map((step, index) => (
           <div key={index} className={styles.step}>
-            <h3>第 {index + 1} 步</h3>
-            <h4>{step.title}</h4>
+            <h3>第 {index + 1} 步: {step.title}</h3>
             <p>{step.content}</p>
+            <p className={styles.nextAction}>下一步操作: {step.next_action === 'continue' ? '继续' : '最终答案'}</p>
           </div>
         ))}
 

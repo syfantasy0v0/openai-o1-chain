@@ -1,5 +1,16 @@
+import { createParser } from 'eventsource-parser';
+
 const parseStepContent = (stepContent) => {
   try {
+    if (stepContent === undefined || stepContent === null) {
+      console.error('步骤内容为 undefined 或 null');
+      return {
+        title: "内容缺失",
+        content: "无法获取步骤内容",
+        next_action: 'continue'
+      };
+    }
+
     if (typeof stepContent !== 'string') {
       console.error('步骤内容不是字符串:', typeof stepContent);
       return {
@@ -9,25 +20,19 @@ const parseStepContent = (stepContent) => {
       };
     }
 
-    // 尝试解析整个字符串为单个 JSON 对象
-    try {
-      const parsedContent = JSON.parse(stepContent);
+    // 使用正则表达式匹配JSON对象，忽略前后的其他内容
+    const jsonMatch = stepContent.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const jsonContent = jsonMatch[0];
+      // 解析JSON内容
+      const parsedContent = JSON.parse(jsonContent);
+      // 验证parsed对象是否包含必要的键
       if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
         return parsedContent;
       }
-    } catch (e) {
-      // 如果整个字符串解析失败，尝试提取和解析最后一个 JSON 对象
-      const jsonRegex = /{[^{}]*}(?!.*{)/;
-      const match = stepContent.match(jsonRegex);
-      if (match) {
-        const parsedContent = JSON.parse(match[0]);
-        if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
-          return parsedContent;
-        }
-      }
     }
 
-    // 如果没有找到有效对象，返回基本结构
+    // 如果无法提取有效的JSON或JSON不包含必要的键，则创建一个基本结构
     console.log('无法提取有效的JSON或JSON结构不正确，使用基本结构');
     return {
       title: "解析失败",
@@ -66,24 +71,16 @@ export default async function handler(req, res) {
   };
 
   const systemPrompt = `你是一位专家级AI助手，用中文一步步解释你的推理过程。对于每一步：
-1. 提供一个标题，描述这一步的主要目的。
-2. 详细解释这一步的推理或分析过程，包括使用的方法、考虑的因素和得出的结论。
+1. 提供一个标题，描述你在这一步要做什么。
+2. 解释这一步的推理或分析过程。
 3. 决定是否需要另一步，或是否准备好给出最终答案。
 4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
-
-请遵循以下指导原则：
-- 使用至少3个推理步骤，但不超过5个步骤，除非问题特别复杂。
-- 在你的推理中，考虑并讨论替代答案或方法。
-- 反思可能的错误或推理中的潜在缺陷。
-- 使用不同的方法来验证你的结论。
-- 考虑问题的实际应用和潜在的边界情况。
-
-记住，你是一个AI助手，有一定的局限性。如果遇到无法确定的信息，请明确说明。
-重要：请确保每次回复都只包含一个有效的JSON对象。`;
+使用尽可能多的推理步骤，至少3步。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际用不同的方法重新审视。使用至少3种方法来得出答案。使用最佳实践。`;
 
   let messages = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: query }
+    { role: "user", content: query },
+    { role: "assistant", content: "谢谢！我现在将按照指示，从问题分解开始，一步步进行思考。" }
   ];
 
   const startTime = Date.now();
@@ -94,7 +91,7 @@ export default async function handler(req, res) {
     let continueReasoning = true;
     let consecutiveParseFailures = 0;
 
-    while (continueReasoning && stepCount < 5) {
+    while (continueReasoning && stepCount < 10) {
       stepCount++;
       const stepStartTime = Date.now();
 
@@ -160,9 +157,9 @@ export default async function handler(req, res) {
 
       messages.push({ role: "assistant", content: JSON.stringify(stepData) });
 
-      if (stepData.next_action === "final_answer" || stepCount >= 5) {
+      if (stepData.next_action === "final_answer") {
         continueReasoning = false;
-      } else {
+      } else if (stepCount < 10) {
         messages.push({ role: "user", content: "请继续分析。" });
       }
 

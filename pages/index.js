@@ -101,7 +101,7 @@ export default function Home() {
           <div key={index} className={styles.step}>
             <h3>第 {index + 1} 步: {step.title}</h3>
             <p>{step.content}</p>
-            <p className={styles.nextAction}>下一步操作: {step.next_action === 'continue' ? '继续' : '最终答案'}</p>
+            {step.next_action === 'final_answer' && <p className={styles.finalAnswer}>这是最终答案</p>}
           </div>
         ))}
 

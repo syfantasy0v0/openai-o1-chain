@@ -6,7 +6,6 @@ import styles from '../styles/Home.module.css';
 
 export default function Home() {
   const [query, setQuery] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('gpt-4o-mini');
   const [baseUrl, setBaseUrl] = useState('https://new1.588686.xyz');
   const [response, setResponse] = useState([]);
@@ -21,45 +20,67 @@ export default function Home() {
     setTotalTime(null);
     setError(null);
 
-    const eventSource = new EventSource(`/api/generate`);
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query, model, baseUrl })
+      });
 
-    // 监听服务器发送的消息
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.error) {
-        setError(data.error);
-        setIsLoading(false);
-        eventSource.close();
-      } else if (data.step === "Final Answer") {
-        setResponse((prevResponse) => [...prevResponse, data]);
-        setTotalTime(data.total_thinking_time);
-        setIsLoading(false);
-        eventSource.close();
-      } else {
-        setResponse((prevResponse) => [...prevResponse, data]);
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Something went wrong');
       }
-    };
 
-    eventSource.onerror = (error) => {
-      console.error('EventSource failed:', error);
-      setError('Failed to connect to the server');
-      setIsLoading(false);
-      eventSource.close();
-    };
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
 
-    // 发送 POST 请求到 API 端点
-    fetch('/api/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ query, apiKey, model, baseUrl })
-    }).catch((err) => {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // 每次接收到 '\n\n' 时，认为是一个完整的数据块
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+          const chunk = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+
+          if (chunk.startsWith('data: ')) {
+            const dataStr = chunk.slice(6); // 移除 'data: ' 前缀
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.error) {
+                setError(data.error);
+                setIsLoading(false);
+                reader.cancel();
+                break;
+              } else if (data.step === "Final Answer") {
+                setResponse((prevResponse) => [...prevResponse, data]);
+                setTotalTime(data.total_thinking_time);
+                setIsLoading(false);
+                reader.cancel();
+                break;
+              } else {
+                setResponse((prevResponse) => [...prevResponse, data]);
+              }
+            } catch (parseError) {
+              console.error('Error parsing JSON:', parseError);
+            }
+          }
+
+          boundary = buffer.indexOf('\n\n');
+        }
+      }
+    } catch (err) {
       console.error('Fetch error:', err);
-      setError('Failed to send the request');
+      setError(err.message);
       setIsLoading(false);
-      eventSource.close();
-    });
+    }
   };
 
   return (
@@ -75,14 +96,16 @@ export default function Home() {
         </h1>
 
         <form onSubmit={handleSubmit} className={styles.form}>
-          <input
+          {/* 移除 API Key 输入，使用环境变量后端处理 */}
+          {/* 如果您决定继续通过前端传递 API Key，可以保留以下输入框 */}
+          {/* <input
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="输入你的 API Key"
             className={styles.input}
             required
-          />
+          /> */}
           <input
             type="text"
             value={model}

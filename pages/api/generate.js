@@ -9,7 +9,8 @@ const systemPrompt = `你是一位具有高级推理能力的专家AI助手。�
 }
 
 关键指示:
-- 至少使用5个不同的推理步骤。
+- 使用5到7个推理步骤。
+- 在第10步之前（包括第10步）必须给出最终结论。
 - 承认你作为AI的局限性，明确说明你能做什么和不能做什么。
 - 主动探索和评估替代答案或方法。
 - 批判性地评估你自己的推理；识别潜在的缺陷或偏见。
@@ -33,6 +34,16 @@ const parseStepContent = (stepContent) => {
       };
     }
 
+    // 尝试直接解析整个字符串
+    try {
+      const parsedContent = JSON.parse(stepContent);
+      if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
+        return parsedContent;
+      }
+    } catch (e) {
+      // 如果直接解析失败，继续尝试提取 JSON
+    }
+
     // 查找第一个出现的 { 和最后一个出现的 }
     const startIndex = stepContent.indexOf('{');
     const endIndex = stepContent.lastIndexOf('}');
@@ -47,7 +58,20 @@ const parseStepContent = (stepContent) => {
       }
     }
 
-    // 如果无法提取有效的JSON或JSON不包含必要的键，则创建一个基本结构
+    // 如果JSON解析失败，尝试直接提取字段
+    const titleMatch = stepContent.match(/"title"\s*:\s*"([^"]+)"/);
+    const contentMatch = stepContent.match(/"content"\s*:\s*"([^"]+)"/);
+    const nextActionMatch = stepContent.match(/"next_action"\s*:\s*"([^"]+)"/);
+
+    if (titleMatch && contentMatch && nextActionMatch) {
+      return {
+        title: titleMatch[1],
+        content: contentMatch[1],
+        next_action: nextActionMatch[1]
+      };
+    }
+
+    // 如果仍然无法提取，则创建一个基本结构
     console.log('无法提取有效的JSON或JSON结构不正确，使用基本结构');
     return {
       title: "解析失败",
@@ -121,10 +145,12 @@ async function runReasoningChain(query, apiKey, model, baseUrl, sendEvent) {
 
     messages.push({ role: "assistant", content: JSON.stringify(stepData) });
 
-    if (stepData.next_action === "end") {
+    if (stepData.next_action === "end" || stepCount >= 10) {
       continueReasoning = false;
-    } else if (stepCount < 10) {
+    } else if (stepCount < 9) {
       messages.push({ role: "user", content: "请继续分析。" });
+    } else {
+      messages.push({ role: "user", content: "请总结并给出最终结论。" });
     }
   }
 

@@ -1,3 +1,4 @@
+// pages/index.js
 import { useState } from 'react';
 import Head from 'next/head';
 import styles from '../styles/Home.module.css';
@@ -5,7 +6,7 @@ import styles from '../styles/Home.module.css';
 export default function Home() {
   const [query, setQuery] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-4o');
+  const [model, setModel] = useState('gpt-4');
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com');
   const [response, setResponse] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -19,28 +20,23 @@ export default function Home() {
     setTotalTime(null);
     setError(null);
 
-    const eventSource = new EventSource(`/api/generate?query=${encodeURIComponent(query)}&apiKey=${encodeURIComponent(apiKey)}&model=${encodeURIComponent(model)}&baseUrl=${encodeURIComponent(baseUrl.replace(/\/$/, ''))}`);
-
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'step') {
-        setResponse(prevResponse => [...prevResponse, data.content]);
-      } else if (data.type === 'totalTime') {
-        setTotalTime(data.content);
+    try {
+      const res = await fetch(`/api/generate?query=${encodeURIComponent(query)}&apiKey=${encodeURIComponent(apiKey)}&model=${encodeURIComponent(model)}&baseUrl=${encodeURIComponent(baseUrl.replace(/\/$/, ''))}`);
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || '生成响应时发生错误');
       }
-    };
 
-    eventSource.onerror = (error) => {
-      console.error('EventSource failed:', error);
-      eventSource.close();
+      const data = await res.json();
+      setResponse(data.steps);
+      setTotalTime(data.totalTime);
+    } catch (error) {
+      console.error('Error:', error);
+      setError(error.message || '生成响应时发生错误');
+    } finally {
       setIsLoading(false);
-      setError('生成响应时发生错误');
-    };
-
-    eventSource.addEventListener('DONE', () => {
-      setIsLoading(false);
-      eventSource.close();
-    });
+    }
   };
 
   return (
@@ -68,7 +64,7 @@ export default function Home() {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="输入模型名称（如 gpt-4o）"
+            placeholder="输入模型名称（如 gpt-3.5-turbo）"
             className={styles.input}
             required
           />
@@ -96,17 +92,17 @@ export default function Home() {
 
         {error && <p className={styles.error}>{error}</p>}
 
-      {response.map((step, index) => (
-        <div key={index} className={styles.step}>
-          <h3>第 {index + 1} 步</h3>
-          <h4>{step.title}</h4>
-          <p>{step.content}</p>
-        </div>
-      ))}
+        {response.map((step, index) => (
+          <div key={index} className={styles.step}>
+            <h3>{step.title}</h3>
+            <p>{step.content}</p>
+          </div>
+        ))}
 
-      {totalTime !== null && (
-        <p className={styles.time}>总思考时间：{totalTime.toFixed(2)} 秒</p>
-      )}
+        {totalTime !== null && (
+          <p className={styles.time}>总思考时间：{totalTime.toFixed(2)} 秒</p>
+        )}
+      </main>
     </div>
   );
 }

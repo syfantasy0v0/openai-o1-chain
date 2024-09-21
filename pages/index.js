@@ -5,9 +5,9 @@ import styles from '../styles/Home.module.css';
 export default function Home() {
   const [query, setQuery] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-3.5-turbo');
-  const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
-  const [response, setResponse] = useState([]);
+  const [model, setModel] = useState('gpt-4o');
+  const [baseUrl, setBaseUrl] = useState('https://api.openai.com');
+  const [response, setResponse] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [totalTime, setTotalTime] = useState(null);
   const [error, setError] = useState(null);
@@ -15,7 +15,7 @@ export default function Home() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    setResponse([]);
+    setResponse('');
     setTotalTime(null);
     setError(null);
 
@@ -25,7 +25,12 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query, apiKey, model, baseUrl }),
+        body: JSON.stringify({ 
+          query, 
+          apiKey, 
+          model,
+          baseUrl
+        }),
       });
 
       if (!res.ok) {
@@ -34,7 +39,16 @@ export default function Home() {
       }
 
       const data = await res.json();
-      setResponse(data.steps);
+      
+      // 处理响应，无论是JSON还是纯文本
+      if (typeof data.response === 'object' && data.response.content) {
+        setResponse(data.response.content);
+      } else if (typeof data.response === 'string') {
+        setResponse(data.response);
+      } else {
+        setResponse(JSON.stringify(data.response));
+      }
+      
       setTotalTime(data.totalTime);
     } catch (error) {
       console.error('Error:', error);
@@ -47,13 +61,13 @@ export default function Home() {
   return (
     <div className={styles.container}>
       <Head>
-        <title>OpenAI Reasoning Chain</title>
+        <title>AI 助手</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <main className={styles.main}>
         <h1 className={styles.title}>
-          OpenAI Reasoning Chain
+          AI 助手
         </h1>
 
         <form onSubmit={handleSubmit} className={styles.form}>
@@ -61,7 +75,7 @@ export default function Home() {
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Enter your OpenAI API Key"
+            placeholder="输入您的 API 密钥"
             className={styles.input}
             required
           />
@@ -69,7 +83,7 @@ export default function Home() {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="Enter model name (e.g., gpt-3.5-turbo)"
+            placeholder="输入模型名称 (例如: deepseek-chat)"
             className={styles.input}
             required
           />
@@ -77,35 +91,35 @@ export default function Home() {
             type="text"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="Enter API base URL"
+            placeholder="输入 API 基础 URL"
             className={styles.input}
             required
           />
           <textarea
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Enter your query"
+            placeholder="输入您的问题"
             className={styles.textarea}
             required
           />
           <button type="submit" disabled={isLoading} className={styles.button}>
-            {isLoading ? 'Generating...' : 'Generate'}
+            {isLoading ? '生成中...' : '生成'}
           </button>
         </form>
 
-        {isLoading && <p className={styles.loading}>Generating response...</p>}
+        {isLoading && <p className={styles.loading}>正在生成响应...</p>}
 
         {error && <p className={styles.error}>{error}</p>}
 
-        {response.map((step, index) => (
-          <div key={index} className={styles.step}>
-            <h3>{step.title}</h3>
-            <p>{step.content}</p>
+        {response && (
+          <div className={styles.response}>
+            <h3>响应：</h3>
+            <p>{response}</p>
           </div>
-        ))}
+        )}
 
         {totalTime !== null && (
-          <p className={styles.time}>Total thinking time: {totalTime.toFixed(2)} seconds</p>
+          <p className={styles.time}>总思考时间: {totalTime.toFixed(2)} 秒</p>
         )}
       </main>
     </div>

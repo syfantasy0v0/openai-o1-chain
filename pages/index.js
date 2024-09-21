@@ -1,5 +1,4 @@
-// pages/index.js
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import styles from '../styles/Home.module.css';
 
@@ -20,23 +19,29 @@ export default function Home() {
     setTotalTime(null);
     setError(null);
 
-    try {
-      const res = await fetch(`/api/generate?query=${encodeURIComponent(query)}&apiKey=${encodeURIComponent(apiKey)}&model=${encodeURIComponent(model)}&baseUrl=${encodeURIComponent(baseUrl.replace(/\/$/, ''))}`);
-      
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || '生成响应时发生错误');
-      }
+    const eventSource = new EventSource(`/api/generate?query=${encodeURIComponent(query)}&apiKey=${encodeURIComponent(apiKey)}&model=${encodeURIComponent(model)}&baseUrl=${encodeURIComponent(baseUrl.replace(/\/$/, ''))}`);
 
-      const data = await res.json();
-      setResponse(data.steps);
-      setTotalTime(data.totalTime);
-    } catch (error) {
-      console.error('Error:', error);
-      setError(error.message || '生成响应时发生错误');
-    } finally {
+    eventSource.addEventListener('step', (event) => {
+      const data = JSON.parse(event.data);
+      setResponse(prevResponse => [...prevResponse, data]);
+    });
+
+    eventSource.addEventListener('totalTime', (event) => {
+      const data = JSON.parse(event.data);
+      setTotalTime(data.time);
+    });
+
+    eventSource.addEventListener('error', (event) => {
+      const data = JSON.parse(event.data);
+      setError(data.message || '生成响应时发生错误');
       setIsLoading(false);
-    }
+      eventSource.close();
+    });
+
+    eventSource.addEventListener('done', () => {
+      setIsLoading(false);
+      eventSource.close();
+    });
   };
 
   return (
@@ -94,7 +99,8 @@ export default function Home() {
 
         {response.map((step, index) => (
           <div key={index} className={styles.step}>
-            <h3>{step.title}</h3>
+            <h3>第 {index + 1} 步</h3>
+            <h4>{step.title}</h4>
             <p>{step.content}</p>
           </div>
         ))}

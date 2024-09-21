@@ -7,14 +7,14 @@ import styles from '../styles/Home.module.css';
 export default function Home() {
   const [query, setQuery] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-4'); // 修改默认模型名称
+  const [model, setModel] = useState('gpt-4o'); // 确保默认模型名称为 'gpt-4o'
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com');
   const [response, setResponse] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [totalTime, setTotalTime] = useState(null);
   const [error, setError] = useState(null);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setResponse([]);
@@ -72,7 +72,7 @@ export default function Home() {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="输入模型名称（例如：gpt-4）"
+            placeholder="输入模型名称（例如：gpt-4o）"
             className={styles.input}
             required
           />

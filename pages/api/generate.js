@@ -26,6 +26,7 @@ export default async function handler(req, res) {
 2. 解释这一步的推理或分析过程。
 3. 决定是否需要另一步，或是否准备好给出最终答案。
 4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
+
 使用尽可能多的推理步骤，至少3步。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际用不同的方法重新审视。使用至少3种方法来得出答案。使用最佳实践。`;
 
   let messages = [
@@ -66,50 +67,21 @@ export default async function handler(req, res) {
 
       const data = await response.json();
       const stepContent = data.choices[0].message.content;
-
-      console.log('Raw API response:', stepContent);
-
+      
       let stepData;
       try {
-        // Remove backticks and "json" tag if present
-        const cleanedContent = stepContent.replace(/^```json\s*|\s*```$/g, '');
-        // Remove any leading/trailing whitespace and normalize line breaks
-        const normalizedContent = cleanedContent.trim().replace(/\n/g, '\\n');
-        
-        console.log('Attempting to parse:', normalizedContent);
-        
-        // Check if the content starts and ends with curly braces
-        if (!/^\{.*\}$/.test(normalizedContent)) {
-          throw new Error('Content is not a valid JSON object');
-        }
-        
-        stepData = JSON.parse(normalizedContent);
+        stepData = JSON.parse(stepContent);
       } catch (error) {
-        console.error('JSON解析失败:', error);
-        console.error('失败的内容:', stepContent);
-        console.error('清理后的内容:', normalizedContent);
-        
-        // Attempt to extract JSON-like structure
-        const jsonMatch = normalizedContent.match(/\{(?:[^{}]|(\{(?:[^{}]|\1)*\}))*\}/);
-        if (jsonMatch) {
-          console.log('尝试解析提取的JSON结构:', jsonMatch[0]);
-          try {
-            stepData = JSON.parse(jsonMatch[0]);
-          } catch (innerError) {
-            console.error('提取的JSON结构解析失败:', innerError);
-          }
-        }
-        
-        if (!stepData) {
-          stepData = {
-            title: `第 ${stepCount} 步`,
-            content: stepContent,
-            next_action: 'continue'
-          };
-        }
+        console.error('JSON解析失败:', stepContent);
+        stepData = {
+          title: `第 ${stepCount} 步`,
+          content: stepContent,
+          next_action: 'continue'
+        };
       }
 
       sendEvent('step', stepData);
+
       messages.push({ role: "assistant", content: JSON.stringify(stepData) });
 
       if (stepData.next_action === "final_answer") {

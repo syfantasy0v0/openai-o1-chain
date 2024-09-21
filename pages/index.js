@@ -96,18 +96,17 @@ export default function Home() {
 
         {error && <p className={styles.error}>{error}</p>}
 
-        {response.map((step, index) => (
-          <div key={index} className={styles.step}>
-            <h3>第 {index + 1} 步</h3>
-            <h4>{step.title}</h4>
-            <p>{step.content}</p>
-          </div>
-        ))}
+      {response.map((step, index) => (
+        <div key={index} className={styles.step}>
+          <h3>第 {index + 1} 步</h3>
+          <h4>{step.title}</h4>
+          <p>{step.content}</p>
+        </div>
+      ))}
 
-        {totalTime !== null && (
-          <p className={styles.time}>总思考时间：{totalTime.toFixed(2)} 秒</p>
-        )}
-      </main>
+      {totalTime !== null && (
+        <p className={styles.time}>总思考时间：{totalTime.toFixed(2)} 秒</p>
+      )}
     </div>
   );
 }

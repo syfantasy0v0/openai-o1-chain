@@ -1,16 +1,24 @@
-// pages/api/generate.js
+// 文件路径: C:/Users/Administrator/Desktop/openai-o1-chain-main/pages/api/generate.js
 
 import axios from 'axios';
 
 const MAX_STEPS = 25; // 最大推理步骤数
 const MAX_TOKENS_PER_STEP = 300; // 每步的最大 tokens
-const MAX_TOKENS_FINAL_ANSWER = 200; // 最终答案的最大 tokens
+const MAX_TOKENS_FINAL_ANSWER = 200; // 最终回答的最大 tokens
 
-async function makeApiCall(apiClient, messages, max_tokens, is_final_answer = false, model) {
+/**
+ * 进行 API 调用的函数，带有重试机制
+ * @param {axios} apiClient - Axios 实例
+ * @param {Array} messages - 消息数组
+ * @param {number} max_tokens - 最大 tokens 数
+ * @param {boolean} is_final_answer - 是否为最终回答
+ * @returns {Object} - 返回的 JSON 对象
+ */
+async function makeApiCall(apiClient, messages, max_tokens, is_final_answer = false) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await apiClient.post('/v1/chat/completions', {
-        model: model, // 使用传入的模型名称
+        model: "gpt-4o-mini", // 使用用户所需的模型
         messages: messages,
         max_tokens: max_tokens,
         temperature: 0.2,
@@ -25,32 +33,33 @@ async function makeApiCall(apiClient, messages, max_tokens, is_final_answer = fa
           return { title: "Error", content: `Failed to generate step after 3 attempts. Error: ${error.message}`, next_action: "final_answer" };
         }
       }
-      await new Promise(resolve => setTimeout(resolve, 1000)); // 重试前等待 1 秒
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 重试前等待1秒
     }
   }
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') { // 接受 POST 请求
+  if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
-  const { query, apiKey, model, baseUrl } = req.body; // 从请求体中获取
+  const { query, apiKey, model, baseUrl } = req.body;
 
-  if (!apiKey || !model || !baseUrl || !query) { // 检查所有必要参数
+  if (!apiKey || !model || !baseUrl) {
     return res.status(400).json({ message: 'Missing required parameters' });
   }
 
-  // 移除 baseUrl 末尾的斜杠（如果有）
+  // 移除 baseUrl 末尾的斜杠
   const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
   const apiClient = axios.create({
     baseURL: cleanBaseUrl,
     headers: {
       'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
     },
-    timeout: 55000 // 55 秒超时
+    timeout: 55000 // 55秒超时
   });
 
   const systemPrompt = `You are an expert AI assistant that explains your reasoning step by step. For each step, provide a title that describes what you're doing in that step, along with the content. Decide if you need another step or if you're ready to give the final answer. Respond in JSON format with 'title', 'content', and 'next_action' (either 'continue' or 'final_answer') keys. USE AS MANY REASONING STEPS AS POSSIBLE. AT LEAST 3. BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, INCLUDE EXPLORATION OF ALTERNATIVE ANSWERS. CONSIDER YOU MAY BE WRONG, AND IF YOU ARE WRONG IN YOUR REASONING, WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES.`;
@@ -73,7 +82,7 @@ export default async function handler(req, res) {
   try {
     while (step_count <= MAX_STEPS) {
       const start_time = Date.now();
-      const step_data = await makeApiCall(apiClient, messages, MAX_TOKENS_PER_STEP, false, model); // 传入模型名称
+      const step_data = await makeApiCall(apiClient, messages, MAX_TOKENS_PER_STEP);
       const end_time = Date.now();
       const thinking_time = (end_time - start_time) / 1000;
       total_thinking_time += thinking_time;
@@ -89,11 +98,11 @@ export default async function handler(req, res) {
       step_count++;
     }
 
-    // 生成最终答案
+    // 生成最终回答
     messages.push({ role: "user", content: "Please provide the final answer based on your reasoning above." });
 
     const start_time_final = Date.now();
-    const final_data = await makeApiCall(apiClient, messages, MAX_TOKENS_FINAL_ANSWER, true, model); // 传入模型名称
+    const final_data = await makeApiCall(apiClient, messages, MAX_TOKENS_FINAL_ANSWER, true);
     const end_time_final = Date.now();
     const thinking_time_final = (end_time_final - start_time_final) / 1000;
     total_thinking_time += thinking_time_final;

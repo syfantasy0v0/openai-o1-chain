@@ -5,62 +5,69 @@ const parseStepContent = (stepContent) => {
     if (!stepContent || typeof stepContent !== 'string') {
       console.error('Invalid step content:', stepContent);
       return {
-        title: "Invalid Content",
-        content: "Unable to retrieve step content",
+        title: "内容无效",
+        content: "无法获取步骤内容",
         next_action: 'continue'
       };
     }
 
-    // Parse the entire response as JSON
+    // 解析整个响应为 JSON
     const parsedResponse = JSON.parse(stepContent);
 
     if (parsedResponse.choices && parsedResponse.choices[0] && parsedResponse.choices[0].message) {
       const messageContent = parsedResponse.choices[0].message.content;
       
-      // Extract all JSON objects from the content
-      const jsonObjects = messageContent.match(/\{[\s\S]*?\}/g);
+      // 尝试解析消息内容为 JSON
+      try {
+        const parsedContent = JSON.parse(messageContent);
+        if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
+          return parsedContent;
+        }
+      } catch (error) {
+        // 如果解析失败，说明消息内容不是 JSON 格式
+        console.log('消息内容不是 JSON 格式，尝试提取 JSON 对象');
+      }
 
-      if (jsonObjects) {
-        // Parse and return all valid JSON objects
-        return jsonObjects.map(jsonStr => {
-          try {
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.title && parsed.content && parsed.next_action) {
-              return parsed;
-            }
-          } catch (error) {
-            console.error('Error parsing JSON object:', error);
+      // 如果消息内容不是 JSON 格式，尝试提取 JSON 对象
+      const jsonMatch = messageContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const jsonContent = jsonMatch[0];
+        try {
+          const parsedContent = JSON.parse(jsonContent);
+          if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
+            return parsedContent;
           }
-          return null;
-        }).filter(obj => obj !== null);
+        } catch (error) {
+          console.error('JSON 解析失败:', error);
+        }
       }
     }
 
-    console.log('Unable to extract valid JSON objects, using basic structure');
-    return [{
-      title: "Parsing Failed",
-      content: stepContent,
+    console.log('无法提取有效的 JSON，使用基本结构');
+    return {
+      title: "解析失败",
+      content: messageContent || stepContent,
       next_action: 'continue'
-    }];
+    };
   } catch (error) {
-    console.error('JSON parsing failed:', error);
-    return [{
-      title: "Parsing Error",
+    console.error('JSON 解析失败:', error);
+    return {
+      title: "解析错误",
       content: String(stepContent),
       next_action: 'continue'
-    }];
+    };
   }
 };
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ message: 'Method not allowed' });
+    return res.status(405).json({ message: '方法不允许' });
   }
 
   const { query, apiKey, model, baseUrl } = req.query;
 
   if (!query || !apiKey || !model || !baseUrl) {
-    return res.status(400).json({ message: 'Missing required parameters' });
+    return res.status(400).json({ message: '缺少必要参数' });
   }
 
   res.writeHead(200, {
@@ -73,17 +80,32 @@ export default async function handler(req, res) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
-  const systemPrompt = `你是一位专家级AI助手，用中文一步步解释你的推理过程。对于每一步：
-1. 提供一个标题，描述你在这一步要做什么。
-2. 解释这一步的推理或分析过程。
-3. 决定是否需要另一步，或是否准备好给出最终答案。
+  const systemPrompt = `你是一位专家级AI助手，用中文一步步解释你的推理过程。请严格按照以下格式回复：
+
+1. 为每一步提供一个标题，描述这一步的主要目标或内容。
+2. 详细解释这一步的推理或分析过程。
+3. 在每一步结束时，决定是继续下一步还是给出最终答案。
 4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
-使用尽可能多的推理步骤，至少3步。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际用不同的方法重新审视。使用至少3种方法来得出答案。使用最佳实践。`;
+
+示例格式：
+{
+  "title": "步骤标题",
+  "content": "详细的推理过程和分析...",
+  "next_action": "continue"
+}
+
+请注意：
+- 使用至少3个推理步骤，但不要超过10个步骤。
+- 在你的推理中，考虑并分析多种可能性和替代方案。
+- 如果你意识到之前的推理可能有误，请明确指出并重新审视。
+- 使用不同的方法和角度来验证你的结论。
+- 在给出最终答案之前，请确保你已经全面考虑了问题的各个方面。
+
+请记住，你的回答应该既详细又结构化，每一步都应该推进我们对问题的理解。`;
 
   let messages = [
     { role: "system", content: systemPrompt },
     { role: "user", content: query },
-    { role: "assistant", content: "谢谢！我现在将按照指示，从问题分解开始，一步步进行思考。" }
   ];
 
   const startTime = Date.now();
@@ -116,11 +138,11 @@ export default async function handler(req, res) {
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error?.message || `API request failed: ${response.status}`);
+          throw new Error(errorData.error?.message || `API请求失败: ${response.status}`);
         }
       } catch (fetchError) {
-        console.error('API request failed:', fetchError);
-        sendEvent('error', { message: 'API request failed', error: fetchError.message });
+        console.error('API请求失败:', fetchError);
+        sendEvent('error', { message: 'API请求失败', error: fetchError.message });
         break;
       }
 
@@ -128,41 +150,39 @@ export default async function handler(req, res) {
       try {
         data = await response.json();
       } catch (jsonError) {
-        console.error('Failed to parse API response:', jsonError);
-        sendEvent('error', { message: 'Failed to parse API response', error: jsonError.message });
+        console.error('解析API响应失败:', jsonError);
+        sendEvent('error', { message: '解析API响应失败', error: jsonError.message });
         break;
       }
 
       if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        console.error('Invalid API response format:', data);
-        sendEvent('error', { message: 'Invalid API response format', error: 'Missing expected data structure' });
+        console.error('API响应格式不正确:', data);
+        sendEvent('error', { message: 'API响应格式不正确', error: 'Missing expected data structure' });
         break;
       }
 
       const rawStepContent = JSON.stringify(data);
 
-      console.log(`Step ${stepCount} raw return:`, rawStepContent);
+      console.log(`第 ${stepCount} 步原始返回:`, rawStepContent);
 
       const stepData = parseStepContent(rawStepContent);
 
-      if (stepData.length === 0 || (stepData.length === 1 && (stepData[0].title === "Parsing Failed" || stepData[0].title === "Parsing Error"))) {
+      if (stepData.title === "解析失败" || stepData.title === "解析错误") {
         consecutiveParseFailures++;
         if (consecutiveParseFailures >= 3) {
-          console.error('3 consecutive parse failures, terminating loop');
+          console.error('连续3次解析失败，终止循环');
           continueReasoning = false;
         }
       } else {
         consecutiveParseFailures = 0;
       }
 
-      stepData.forEach((step, index) => {
-        sendEvent('step', step);
-      });
+      sendEvent('step', stepData);
       sendEvent('rawStep', { content: rawStepContent });
 
       messages.push({ role: "assistant", content: JSON.stringify(stepData) });
 
-      if (stepData[stepData.length - 1].next_action === "final_answer") {
+      if (stepData.next_action === "final_answer") {
         continueReasoning = false;
       } else if (stepCount < 10) {
         messages.push({ role: "user", content: "请继续分析。" });
@@ -175,8 +195,8 @@ export default async function handler(req, res) {
     sendEvent('totalTime', { time: totalTime });
     sendEvent('done', {});
   } catch (error) {
-    console.error('Error:', error);
-    sendEvent('error', { message: 'Failed to generate response', error: error.message });
+    console.error('错误:', error);
+    sendEvent('error', { message: '生成响应失败', error: error.message });
   } finally {
     res.end();
   }

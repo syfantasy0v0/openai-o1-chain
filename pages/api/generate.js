@@ -37,9 +37,43 @@ export default async function handler(req, res) {
   const startTime = Date.now();
   let totalTime = 0;
 
+  const parseStepContent = (stepContent) => {
+    try {
+      // 移除可能存在的反引号和"json"标签
+      let cleanedContent = stepContent.replace(/^```json\s*|\s*```$/g, '');
+      
+      // 如果内容已经是一个有效的JSON对象，直接解析
+      if (/^\{.*\}$/.test(cleanedContent)) {
+        return JSON.parse(cleanedContent);
+      }
+      
+      // 尝试从内容中提取JSON对象
+      const jsonMatch = cleanedContent.match(/\{(?:[^{}]|(\{(?:[^{}]|\1)*\}))*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      
+      // 如果无法提取有效的JSON，则创建一个基本结构
+      console.log('无法提取有效的JSON，使用基本结构');
+      return {
+        title: "解析失败",
+        content: stepContent,
+        next_action: 'continue'
+      };
+    } catch (error) {
+      console.error('JSON解析失败:', error);
+      return {
+        title: "解析错误",
+        content: stepContent,
+        next_action: 'continue'
+      };
+    }
+  };
+
   try {
     let stepCount = 0;
     let continueReasoning = true;
+    let consecutiveParseFailures = 0;
 
     while (continueReasoning && stepCount < 10) {
       stepCount++;
@@ -65,48 +99,30 @@ export default async function handler(req, res) {
       }
 
       const data = await response.json();
-      const stepContent = data.choices[0].message.content;
+      const rawStepContent = data.choices[0].message.content;
 
-      // Extract JSON objects from the content
-      const jsonRegex = /```json\s*(\{[\s\S]*?\})\s*```/g;
-      const jsonMatches = [...stepContent.matchAll(jsonRegex)];
+      console.log(`第 ${stepCount} 步原始返回:`, rawStepContent);
 
-      if (jsonMatches.length > 0) {
-        // Process each JSON object found
-        for (const match of jsonMatches) {
-          try {
-            const stepData = JSON.parse(match[1]);
-            sendEvent('step', stepData);
-            messages.push({ role: "assistant", content: JSON.stringify(stepData) });
+      const stepData = parseStepContent(rawStepContent);
 
-            if (stepData.next_action === "final_answer") {
-              continueReasoning = false;
-              break;
-            }
-          } catch (error) {
-            console.error('JSON解析失败:', match[1]);
-            // If parsing fails, send the raw content as a fallback
-            const fallbackData = {
-              title: `第 ${stepCount} 步`,
-              content: match[1],
-              next_action: 'continue'
-            };
-            sendEvent('step', fallbackData);
-            messages.push({ role: "assistant", content: JSON.stringify(fallbackData) });
-          }
+      if (stepData.title === "解析失败" || stepData.title === "解析错误") {
+        consecutiveParseFailures++;
+        if (consecutiveParseFailures >= 3) {
+          console.error('连续3次解析失败，终止循环');
+          continueReasoning = false;
         }
       } else {
-        // If no JSON objects are found, treat the entire content as a single step
-        const fallbackData = {
-          title: `第 ${stepCount} 步`,
-          content: stepContent,
-          next_action: 'continue'
-        };
-        sendEvent('step', fallbackData);
-        messages.push({ role: "assistant", content: JSON.stringify(fallbackData) });
+        consecutiveParseFailures = 0;
       }
 
-      if (stepCount < 10 && continueReasoning) {
+      sendEvent('step', stepData);
+      sendEvent('rawStep', { content: rawStepContent });
+
+      messages.push({ role: "assistant", content: JSON.stringify(stepData) });
+
+      if (stepData.next_action === "final_answer") {
+        continueReasoning = false;
+      } else if (stepCount < 10) {
         messages.push({ role: "user", content: "请继续分析。" });
       }
 

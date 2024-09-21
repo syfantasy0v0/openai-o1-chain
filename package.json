@@ -14,8 +14,3 @@
     "axios": "^0.21.1"
   }
 }
-
-// File: next.config.js
-module.exports = {
-  reactStrictMode: true,
-}

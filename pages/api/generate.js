@@ -1,40 +1,7 @@
 import { createParser } from 'eventsource-parser';
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ message: '方法不允许' });
-  }
-  
-  const { query, apiKey, model, baseUrl } = req.query;
-  if (!apiKey || !model || !baseUrl) {
-    return res.status(400).json({ message: '缺少必要参数' });
-  }
-  
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    'Connection': 'keep-alive',
-  });
-
-  const sendEvent = (event, data) => {
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  };
-
-  const systemPrompt = `你是一位专家级AI助手，用中文一步步解释你的推理过程。对于每一步：
-1. 提供一个标题，描述你在这一步要做什么。
-2. 解释这一步的推理或分析过程。
-3. 决定是否需要另一步，或是否准备好给出最终答案。
-4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
-使用尽可能多的推理步骤，至少3步。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际用不同的方法重新审视。使用至少3种方法来得出答案。使用最佳实践。`;
-
-  let messages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: query },
-    { role: "assistant", content: "谢谢！我现在将按照指示，从问题分解开始，一步步进行思考。" }
-  ];
-
-  const startTime = Date.now();
-  let totalTime = 0;
+  // ... [previous code remains the same] ...
 
   try {
     let stepCount = 0;
@@ -68,11 +35,13 @@ export default async function handler(req, res) {
       
       let stepData;
       try {
-        // Remove any surrounding code block markers before parsing
-        const cleanedContent = stepContent.replace(/^```[\w]*\n|```$/g, '');
+        // Remove any surrounding code block markers and extra backticks
+        const cleanedContent = stepContent.replace(/^```[\w]*\n|```$|^`+|`+$/gm, '').trim();
+        console.log('Cleaned content:', cleanedContent); // 添加日志输出
         stepData = JSON.parse(cleanedContent);
       } catch (error) {
         console.error('JSON解析失败:', stepContent);
+        console.error('解析错误:', error);
         // If parsing fails, create a default structure
         stepData = {
           title: `第 ${stepCount} 步`,

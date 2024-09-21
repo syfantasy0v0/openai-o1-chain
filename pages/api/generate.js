@@ -6,11 +6,11 @@ const MAX_STEPS = 25; // 最大推理步骤数
 const MAX_TOKENS_PER_STEP = 300; // 每步的最大 tokens
 const MAX_TOKENS_FINAL_ANSWER = 200; // 最终答案的最大 tokens
 
-async function makeApiCall(apiClient, messages, max_tokens, is_final_answer = false) {
+async function makeApiCall(apiClient, messages, max_tokens, is_final_answer = false, model) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await apiClient.post('/v1/chat/completions', {
-        model: "gpt-3.5-turbo", // 可以根据需要更改模型
+        model: model, // 使用传入的模型名称
         messages: messages,
         max_tokens: max_tokens,
         temperature: 0.2,
@@ -31,11 +31,11 @@ async function makeApiCall(apiClient, messages, max_tokens, is_final_answer = fa
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') { // 修改为接受 GET 请求
+  if (req.method !== 'POST') { // 接受 POST 请求
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
-  const { query, apiKey, model, baseUrl } = req.query; // 从查询参数中获取
+  const { query, apiKey, model, baseUrl } = req.body; // 从请求体中获取
 
   if (!apiKey || !model || !baseUrl || !query) { // 检查所有必要参数
     return res.status(400).json({ message: 'Missing required parameters' });
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
   try {
     while (step_count <= MAX_STEPS) {
       const start_time = Date.now();
-      const step_data = await makeApiCall(apiClient, messages, MAX_TOKENS_PER_STEP);
+      const step_data = await makeApiCall(apiClient, messages, MAX_TOKENS_PER_STEP, false, model); // 传入模型名称
       const end_time = Date.now();
       const thinking_time = (end_time - start_time) / 1000;
       total_thinking_time += thinking_time;
@@ -93,7 +93,7 @@ export default async function handler(req, res) {
     messages.push({ role: "user", content: "Please provide the final answer based on your reasoning above." });
 
     const start_time_final = Date.now();
-    const final_data = await makeApiCall(apiClient, messages, MAX_TOKENS_FINAL_ANSWER, true);
+    const final_data = await makeApiCall(apiClient, messages, MAX_TOKENS_FINAL_ANSWER, true, model); // 传入模型名称
     const end_time_final = Date.now();
     const thinking_time_final = (end_time_final - start_time_final) / 1000;
     total_thinking_time += thinking_time_final;

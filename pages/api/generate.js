@@ -17,14 +17,13 @@ export default async function handler(req, res) {
     'Connection': 'keep-alive',
   });
 
-  const sendEvent = (event, data) => {
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const sendEvent = (type, data) => {
+    res.write(`data: ${JSON.stringify({ type, content: data })}\n\n`);
   };
 
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
 
-  let counter = 0;
   let totalTime = 0;
 
   try {
@@ -47,7 +46,6 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
-          'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -76,7 +74,8 @@ export default async function handler(req, res) {
 
       let stepData;
       try {
-        stepData = JSON.parse(messages[messages.length - 1].content);
+        const lastMessage = messages[messages.length - 1].content;
+        stepData = typeof lastMessage === 'string' ? JSON.parse(lastMessage) : lastMessage;
       } catch (error) {
         console.error('Failed to parse JSON:', messages[messages.length - 1].content);
         stepData = {
@@ -86,14 +85,15 @@ export default async function handler(req, res) {
         };
       }
 
-      sendEvent('message', stepData);
+      sendEvent('step', stepData);
 
-      messages.push({ role: "assistant", content: JSON.stringify(stepData) });
+      messages.push({ role: "assistant", content: stepData });
 
       if (stepData.next_action === "final_answer") break;
     }
 
-    sendEvent('DONE', { totalTime });
+    sendEvent('totalTime', totalTime);
+    sendEvent('DONE', {});
   } catch (error) {
     console.error('Error:', error);
     sendEvent('error', { message: '生成响应失败', error: error.message });

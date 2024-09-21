@@ -1,87 +1,103 @@
-import axios from 'axios';
+import { createParser } from 'eventsource-parser';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
+  if (req.method !== 'GET') {
+    return res.status(405).json({ message: '方法不允许' });
   }
 
-  const { query, apiKey, model, baseUrl } = req.body;
+  const { query, apiKey, model, baseUrl } = req.query;
 
   if (!apiKey || !model || !baseUrl) {
-    return res.status(400).json({ message: 'Missing required parameters' });
+    return res.status(400).json({ message: '缺少必要参数' });
   }
 
-  const apiClient = axios.create({
-    baseURL: baseUrl,
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
-      'Content-Type': 'application/json'
-    },
-    timeout: 50000 // 50 seconds timeout
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
   });
 
+  const sendEvent = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  let counter = 0;
+  let totalTime = 0;
+
   try {
-    const steps = [];
-    let totalTime = 0;
+    const systemPrompt = `你是一位专家级AI助手，用中文一步步解释你的推理过程。对于每一步：
+1. 提供一个标题，描述你在这一步要做什么。
+2. 解释这一步的推理或分析过程。
+3. 决定是否需要另一步，或是否准备好给出最终答案。
+4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
+
+在给出最终答案之前，至少使用3个步骤。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际上要用不同的方法重新审视。在你的分析中使用最佳实践。`;
+
     let messages = [
-      { role: "system", content: `You are an expert AI assistant that explains your reasoning step by step. For each step:
-1. Provide a title that describes what you're doing in that step.
-2. Explain your reasoning or analysis for this step.
-3. Decide if you need another step or if you're ready to give the final answer.
-4. Format your response as a JSON object with "title", "content", and "next_action" keys. The "next_action" should be either "continue" or "final_answer".
-
-USE AT LEAST 3 STEPS before reaching a final answer. Be aware of your limitations as an AI and what you can and cannot do. In your reasoning, include exploration of alternative answers. Consider that you may be wrong, and if so, where your reasoning might be flawed. Fully test all other possibilities. When you say you are re-examining, actually re-examine using a different approach. Use best practices in your analysis.
-
-Example of a valid JSON response:
-{
-  "title": "Initial Analysis of the Query",
-  "content": "To begin solving this problem, we need to carefully examine the given information and identify the crucial elements that will guide our solution process. [Your detailed analysis here]",
-  "next_action": "continue"
-}` },
+      { role: "system", content: systemPrompt },
       { role: "user", content: query },
     ];
 
     for (let i = 0; i < 5; i++) {
       const startTime = Date.now();
-      const completion = await apiClient.post('/v1/chat/completions', {
-        model: model,
-        messages: messages
+      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+          stream: true,
+        }),
       });
+
+      const parser = createParser(event => {
+        if (event.type === 'event') {
+          if (event.data !== '[DONE]') {
+            const data = JSON.parse(event.data);
+            const content = data.choices[0]?.delta?.content || '';
+            sendEvent('message', { content });
+          }
+        }
+      });
+
+      for await (const chunk of response.body) {
+        parser.feed(decoder.decode(chunk));
+      }
+
       const endTime = Date.now();
+      totalTime += (endTime - startTime) / 1000;
 
       let stepData;
       try {
-        const responseContent = completion.data.choices[0].message.content;
-        stepData = JSON.parse(responseContent);
+        stepData = JSON.parse(messages[messages.length - 1].content);
       } catch (error) {
-        console.error('Failed to parse JSON:', completion.data.choices[0].message.content);
+        console.error('Failed to parse JSON:', messages[messages.length - 1].content);
         stepData = {
-          title: `Step ${i + 1}`,
-          content: completion.data.choices[0].message.content,
+          title: `第 ${i + 1} 步`,
+          content: messages[messages.length - 1].content,
           next_action: 'continue'
         };
       }
 
-      totalTime += (endTime - startTime) / 1000;
-
-      steps.push({
-        title: stepData.title,
-        content: stepData.content,
-      });
+      sendEvent('message', stepData);
 
       messages.push({ role: "assistant", content: JSON.stringify(stepData) });
 
       if (stepData.next_action === "final_answer") break;
     }
 
-    res.status(200).json({ steps, totalTime });
+    sendEvent('DONE', { totalTime });
   } catch (error) {
-    console.error('Error:', error.response?.data || error.message);
-    res.status(500).json({ 
-      message: 'Failed to generate response', 
-      error: error.response?.data || error.message,
-      stack: error.stack
-    });
+    console.error('Error:', error);
+    sendEvent('error', { message: '生成响应失败', error: error.message });
+  } finally {
+    res.end();
   }
 }

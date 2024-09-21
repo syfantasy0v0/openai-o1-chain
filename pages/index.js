@@ -1,18 +1,20 @@
-import { useState, useEffect } from 'react';
+// pages/index.js
+
+import { useState } from 'react';
 import Head from 'next/head';
 import styles from '../styles/Home.module.css';
 
 export default function Home() {
   const [query, setQuery] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-4o');
+  const [model, setModel] = useState('gpt-4'); // 修改默认模型名称
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com');
   const [response, setResponse] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [totalTime, setTotalTime] = useState(null);
   const [error, setError] = useState(null);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     setIsLoading(true);
     setResponse([]);
@@ -29,7 +31,11 @@ export default function Home() {
         eventSource.close();
       } else {
         setResponse((prevResponse) => [...prevResponse, data]);
-        setTotalTime(data.totalTime);
+        if (data.step === "Final Answer") {
+          setTotalTime(data.total_thinking_time);
+          setIsLoading(false);
+          eventSource.close();
+        }
       }
     };
 
@@ -39,11 +45,6 @@ export default function Home() {
       setIsLoading(false);
       eventSource.close();
     };
-
-    eventSource.addEventListener('close', () => {
-      setIsLoading(false);
-      eventSource.close();
-    });
   };
 
   return (
@@ -71,7 +72,7 @@ export default function Home() {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="输入模型名称（例如：gpt-4o）"
+            placeholder="输入模型名称（例如：gpt-4）"
             className={styles.input}
             required
           />
@@ -101,8 +102,9 @@ export default function Home() {
 
         {response.map((step, index) => (
           <div key={index} className={styles.step}>
-            <h3>{step.title}</h3>
+            <h3>{step.step === "Final Answer" ? "最终答案" : `步骤 ${step.step}: ${step.title}`}</h3>
             <p>{step.content}</p>
+            {step.thinking_time && <p className={styles.time}>思考时间：{step.thinking_time.toFixed(2)} 秒</p>}
           </div>
         ))}
 

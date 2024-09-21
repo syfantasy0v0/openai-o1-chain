@@ -1,5 +1,3 @@
-import { parse as parseJson } from 'json5';
-
 const parseStepContent = (stepContent) => {
   try {
     if (typeof stepContent !== 'string') {
@@ -11,14 +9,21 @@ const parseStepContent = (stepContent) => {
       };
     }
 
-    // 使用 json5 解析，它更宽松且可以处理多个 JSON 对象
-    const parsedObjects = parseJson(`[${stepContent}]`);
-    
-    // 返回最后一个有效的对象
-    for (let i = parsedObjects.length - 1; i >= 0; i--) {
-      const obj = parsedObjects[i];
-      if (obj.title && obj.content && obj.next_action) {
-        return obj;
+    // 尝试解析整个字符串为单个 JSON 对象
+    try {
+      const parsedContent = JSON.parse(stepContent);
+      if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
+        return parsedContent;
+      }
+    } catch (e) {
+      // 如果整个字符串解析失败，尝试提取和解析最后一个 JSON 对象
+      const jsonRegex = /{[^{}]*}(?!.*{)/;
+      const match = stepContent.match(jsonRegex);
+      if (match) {
+        const parsedContent = JSON.parse(match[0]);
+        if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
+          return parsedContent;
+        }
       }
     }
 
@@ -64,7 +69,7 @@ export default async function handler(req, res) {
 1. 提供一个标题，描述这一步的主要目的。
 2. 详细解释这一步的推理或分析过程，包括使用的方法、考虑的因素和得出的结论。
 3. 决定是否需要另一步，或是否准备好给出最终答案。
-4. 将你的回复格式化为一个或多个JSON对象，每个对象包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
+4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
 
 请遵循以下指导原则：
 - 使用至少3个推理步骤，但不超过5个步骤，除非问题特别复杂。
@@ -73,7 +78,8 @@ export default async function handler(req, res) {
 - 使用不同的方法来验证你的结论。
 - 考虑问题的实际应用和潜在的边界情况。
 
-记住，你是一个AI助手，有一定的局限性。如果遇到无法确定的信息，请明确说明。`;
+记住，你是一个AI助手，有一定的局限性。如果遇到无法确定的信息，请明确说明。
+重要：请确保每次回复都只包含一个有效的JSON对象。`;
 
   let messages = [
     { role: "system", content: systemPrompt },

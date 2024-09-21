@@ -37,58 +37,57 @@ export default async function handler(req, res) {
       { role: "user", content: query },
     ];
 
-    for (let i = 0; i < 5; i++) {
-      const startTime = Date.now();
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          stream: false,
-        }),
-      });
+    const startTime = Date.now();
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: messages,
+        stream: false,
+      }),
+    });
 
-      const data = await response.json();
-      const endTime = Date.now();
-      totalTime += (endTime - startTime) / 1000;
+    const data = await response.json();
+    const endTime = Date.now();
+    totalTime += (endTime - startTime) / 1000;
 
-      if (!response.ok) {
-        throw new Error(data.error?.message || 'API request failed');
-      }
-
-      const fullContent = data.choices[0].message.content;
-
-      let stepData;
-      try {
-        // 尝试解析整个响应
-        stepData = JSON.parse(fullContent);
-      } catch (error) {
-        console.error('Failed to parse JSON:', fullContent);
-        // 如果整个响应无法解析，尝试逐个解析JSON对象
-        const jsonObjects = fullContent.match(/\{[^{}]*\}/g);
-        if (jsonObjects && jsonObjects.length > 0) {
-          stepData = JSON.parse(jsonObjects[jsonObjects.length - 1]);
-        } else {
-          // 如果仍然无法解析，使用默认对象
-          stepData = {
-            title: `第 ${i + 1} 步`,
-            content: fullContent,
-            next_action: 'continue'
-          };
-        }
-      }
-
-      sendEvent('step', stepData);
-
-      // 确保消息内容始终是字符串
-      messages.push({ role: "assistant", content: JSON.stringify(stepData) });
-
-      if (stepData.next_action === "final_answer") break;
+    if (!response.ok) {
+      throw new Error(data.error?.message || 'API request failed');
     }
+
+    const fullContent = data.choices[0].message.content;
+
+    // 提取所有有效的 JSON 对象
+    const jsonObjects = fullContent.match(/\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g) || [];
+    
+    let steps = [];
+    for (let jsonStr of jsonObjects) {
+      try {
+        const step = JSON.parse(jsonStr);
+        steps.push(step);
+        sendEvent('step', step);
+      } catch (error) {
+        console.error('Failed to parse JSON object:', jsonStr);
+      }
+    }
+
+    if (steps.length === 0) {
+      // 如果没有有效的 JSON 对象，发送整个内容作为一个步骤
+      const fallbackStep = {
+        title: "回答",
+        content: fullContent,
+        next_action: "final_answer"
+      };
+      steps.push(fallbackStep);
+      sendEvent('step', fallbackStep);
+    }
+
+    // 将所有步骤作为一个字符串添加到消息中
+    messages.push({ role: "assistant", content: JSON.stringify(steps) });
 
     sendEvent('totalTime', totalTime);
     sendEvent('DONE', {});

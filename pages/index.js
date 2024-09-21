@@ -5,8 +5,8 @@ import styles from '../styles/Home.module.css';
 export default function Home() {
   const [query, setQuery] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-3.5-turbo');
-  const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
+  const [model, setModel] = useState('gpt-4o');
+  const [baseUrl, setBaseUrl] = useState('https://api.openai.com');
   const [response, setResponse] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [totalTime, setTotalTime] = useState(null);

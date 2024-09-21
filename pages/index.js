@@ -1,4 +1,4 @@
-// pages/index.js
+// 文件路径: C:/Users/Administrator/Desktop/openai-o1-chain-main/pages/index.js
 
 import { useState } from 'react';
 import Head from 'next/head';
@@ -7,8 +7,8 @@ import styles from '../styles/Home.module.css';
 export default function Home() {
   const [query, setQuery] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-4o'); // 确保默认模型名称为 'gpt-4o'
-  const [baseUrl, setBaseUrl] = useState('https://api.openai.com');
+  const [model, setModel] = useState('gpt-4o-mini');
+  const [baseUrl, setBaseUrl] = useState('https://new1.588686.xyz');
   const [response, setResponse] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [totalTime, setTotalTime] = useState(null);
@@ -21,21 +21,22 @@ export default function Home() {
     setTotalTime(null);
     setError(null);
 
-    const eventSource = new EventSource(`/api/generate?query=${encodeURIComponent(query)}&apiKey=${encodeURIComponent(apiKey)}&model=${encodeURIComponent(model)}&baseUrl=${encodeURIComponent(baseUrl)}`);
+    const eventSource = new EventSource(`/api/generate`);
 
+    // 监听服务器发送的消息
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.error) {
         setError(data.error);
         setIsLoading(false);
         eventSource.close();
+      } else if (data.step === "Final Answer") {
+        setResponse((prevResponse) => [...prevResponse, data]);
+        setTotalTime(data.total_thinking_time);
+        setIsLoading(false);
+        eventSource.close();
       } else {
         setResponse((prevResponse) => [...prevResponse, data]);
-        if (data.step === "Final Answer") {
-          setTotalTime(data.total_thinking_time);
-          setIsLoading(false);
-          eventSource.close();
-        }
       }
     };
 
@@ -45,6 +46,20 @@ export default function Home() {
       setIsLoading(false);
       eventSource.close();
     };
+
+    // 发送 POST 请求到 API 端点
+    fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ query, apiKey, model, baseUrl })
+    }).catch((err) => {
+      console.error('Fetch error:', err);
+      setError('Failed to send the request');
+      setIsLoading(false);
+      eventSource.close();
+    });
   };
 
   return (
@@ -72,7 +87,7 @@ export default function Home() {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="输入模型名称（例如：gpt-4o）"
+            placeholder="输入模型名称（例如：gpt-4o-mini）"
             className={styles.input}
             required
           />
@@ -80,7 +95,7 @@ export default function Home() {
             type="text"
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="输入 API 基础 URL"
+            placeholder="输入 API 基础 URL（例如：https://new1.588686.xyz）"
             className={styles.input}
             required
           />
@@ -102,9 +117,8 @@ export default function Home() {
 
         {response.map((step, index) => (
           <div key={index} className={styles.step}>
-            <h3>{step.step === "Final Answer" ? "最终答案" : `步骤 ${step.step}: ${step.title}`}</h3>
+            <h3>{step.title}</h3>
             <p>{step.content}</p>
-            {step.thinking_time && <p className={styles.time}>思考时间：{step.thinking_time.toFixed(2)} 秒</p>}
           </div>
         ))}
 

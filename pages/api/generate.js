@@ -67,7 +67,7 @@ export default async function handler(req, res) {
       const data = await response.json();
       const stepContent = data.choices[0].message.content;
 
-      console.log('Raw API response:', stepContent); // 添加这行来记录原始响应
+      console.log('Raw API response:', stepContent);
 
       let stepData;
       try {
@@ -76,17 +76,37 @@ export default async function handler(req, res) {
         // Remove any leading/trailing whitespace and normalize line breaks
         const normalizedContent = cleanedContent.trim().replace(/\n/g, '\\n');
         
-        console.log('Attempting to parse:', normalizedContent); // 添加这行来记录尝试解析的内容
+        console.log('Attempting to parse:', normalizedContent);
+        
+        // Check if the content starts and ends with curly braces
+        if (!/^\{.*\}$/.test(normalizedContent)) {
+          throw new Error('Content is not a valid JSON object');
+        }
         
         stepData = JSON.parse(normalizedContent);
       } catch (error) {
         console.error('JSON解析失败:', error);
         console.error('失败的内容:', stepContent);
-        stepData = {
-          title: `第 ${stepCount} 步`,
-          content: stepContent,
-          next_action: 'continue'
-        };
+        console.error('清理后的内容:', normalizedContent);
+        
+        // Attempt to extract JSON-like structure
+        const jsonMatch = normalizedContent.match(/\{(?:[^{}]|(\{(?:[^{}]|\1)*\}))*\}/);
+        if (jsonMatch) {
+          console.log('尝试解析提取的JSON结构:', jsonMatch[0]);
+          try {
+            stepData = JSON.parse(jsonMatch[0]);
+          } catch (innerError) {
+            console.error('提取的JSON结构解析失败:', innerError);
+          }
+        }
+        
+        if (!stepData) {
+          stepData = {
+            title: `第 ${stepCount} 步`,
+            content: stepContent,
+            next_action: 'continue'
+          };
+        }
       }
 
       sendEvent('step', stepData);

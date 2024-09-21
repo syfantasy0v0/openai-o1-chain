@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Head from 'next/head';
 import styles from '../styles/Home.module.css';
 
@@ -23,7 +23,11 @@ export default function Home() {
 
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setResponse(prevResponse => [...prevResponse, data]);
+      if (data.type === 'step') {
+        setResponse(prevResponse => [...prevResponse, data.content]);
+      } else if (data.type === 'totalTime') {
+        setTotalTime(data.content);
+      }
     };
 
     eventSource.onerror = (error) => {
@@ -33,9 +37,7 @@ export default function Home() {
       setError('生成响应时发生错误');
     };
 
-    eventSource.addEventListener('DONE', (event) => {
-      const data = JSON.parse(event.data);
-      setTotalTime(data.totalTime);
+    eventSource.addEventListener('DONE', () => {
       setIsLoading(false);
       eventSource.close();
     });
@@ -96,7 +98,8 @@ export default function Home() {
 
         {response.map((step, index) => (
           <div key={index} className={styles.step}>
-            <h3>{step.title}</h3>
+            <h3>第 {index + 1} 步</h3>
+            <h4>{step.title}</h4>
             <p>{step.content}</p>
           </div>
         ))}

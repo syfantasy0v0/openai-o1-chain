@@ -1,5 +1,58 @@
 import { createParser } from 'eventsource-parser';
 
+const parseStepContent = (stepContent) => {
+  try {
+    // 首先检查 stepContent 是否为 undefined 或 null
+    if (stepContent === undefined || stepContent === null) {
+      console.error('步骤内容为 undefined 或 null');
+      return {
+        title: "内容缺失",
+        content: "无法获取步骤内容",
+        next_action: 'continue'
+      };
+    }
+
+    // 确保 stepContent 是字符串
+    if (typeof stepContent !== 'string') {
+      console.error('步骤内容不是字符串:', typeof stepContent);
+      return {
+        title: "类型错误",
+        content: `步骤内容类型错误: ${typeof stepContent}`,
+        next_action: 'continue'
+      };
+    }
+
+    // 移除可能存在的反引号和"json"标签
+    let cleanedContent = stepContent.replace(/^```json\s*|\s*```$/g, '');
+    
+    // 如果内容已经是一个有效的JSON对象，直接解析
+    if (/^\{.*\}$/.test(cleanedContent)) {
+      return JSON.parse(cleanedContent);
+    }
+    
+    // 尝试从内容中提取JSON对象
+    const jsonMatch = cleanedContent.match(/\{(?:[^{}]|(\{(?:[^{}]|\1)*\}))*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    // 如果无法提取有效的JSON，则创建一个基本结构
+    console.log('无法提取有效的JSON，使用基本结构');
+    return {
+      title: "解析失败",
+      content: stepContent,
+      next_action: 'continue'
+    };
+  } catch (error) {
+    console.error('JSON解析失败:', error);
+    return {
+      title: "解析错误",
+      content: String(stepContent),
+      next_action: 'continue'
+    };
+  }
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ message: '方法不允许' });
@@ -7,7 +60,7 @@ export default async function handler(req, res) {
 
   const { query, apiKey, model, baseUrl } = req.query;
 
-  if (!apiKey || !model || !baseUrl) {
+  if (!query || !apiKey || !model || !baseUrl) {
     return res.status(400).json({ message: '缺少必要参数' });
   }
 
@@ -25,7 +78,7 @@ export default async function handler(req, res) {
 1. 提供一个标题，描述你在这一步要做什么。
 2. 解释这一步的推理或分析过程。
 3. 决定是否需要另一步，或是否准备好给出最终答案。
-4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"，不要返回任何其它内容，你每次只需要返回一个json，不要返回"好的"之类表示明白的语句，也不要返回"我会用JSON格式回复每一步的推理过程。让我们开始吧"这种表示开始的话，这非常非常重要！！！！
+4. 将你的回复格式化为一个JSON对象，包含"title"、"content"和"next_action"键。"next_action"应该是"continue"或"final_answer"。
 使用尽可能多的推理步骤，至少3步。要意识到你作为AI的局限性，明白你能做什么和不能做什么。在你的推理中，包括对替代答案的探索。考虑到你可能会出错，如果出错，你的推理可能在哪里有缺陷。充分测试所有其他可能性。当你说你要重新审视时，实际用不同的方法重新审视。使用至少3种方法来得出答案。使用最佳实践。`;
 
   let messages = [
@@ -37,39 +90,6 @@ export default async function handler(req, res) {
   const startTime = Date.now();
   let totalTime = 0;
 
-  const parseStepContent = (stepContent) => {
-    try {
-      // 移除可能存在的反引号和"json"标签
-      let cleanedContent = stepContent.replace(/^```json\s*|\s*```$/g, '');
-      
-      // 如果内容已经是一个有效的JSON对象，直接解析
-      if (/^\{.*\}$/.test(cleanedContent)) {
-        return JSON.parse(cleanedContent);
-      }
-      
-      // 尝试从内容中提取JSON对象
-      const jsonMatch = cleanedContent.match(/\{(?:[^{}]|(\{(?:[^{}]|\1)*\}))*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
-      }
-      
-      // 如果无法提取有效的JSON，则创建一个基本结构
-      console.log('无法提取有效的JSON，使用基本结构');
-      return {
-        title: "解析失败",
-        content: stepContent,
-        next_action: 'continue'
-      };
-    } catch (error) {
-      console.error('JSON解析失败:', error);
-      return {
-        title: "解析错误",
-        content: stepContent,
-        next_action: 'continue'
-      };
-    }
-  };
-
   try {
     let stepCount = 0;
     let continueReasoning = true;
@@ -79,26 +99,47 @@ export default async function handler(req, res) {
       stepCount++;
       const stepStartTime = Date.now();
 
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          temperature: 0.7,
-          max_tokens: 1000,
-        }),
-      });
+      let response;
+      try {
+        response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 1000,
+          }),
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'API请求失败');
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error?.message || `API请求失败: ${response.status}`);
+        }
+      } catch (fetchError) {
+        console.error('API请求失败:', fetchError);
+        sendEvent('error', { message: 'API请求失败', error: fetchError.message });
+        break;
       }
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error('解析API响应失败:', jsonError);
+        sendEvent('error', { message: '解析API响应失败', error: jsonError.message });
+        break;
+      }
+
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        console.error('API响应格式不正确:', data);
+        sendEvent('error', { message: 'API响应格式不正确', error: 'Missing expected data structure' });
+        break;
+      }
+
       const rawStepContent = data.choices[0].message.content;
 
       console.log(`第 ${stepCount} 步原始返回:`, rawStepContent);

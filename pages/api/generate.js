@@ -64,19 +64,28 @@ export default async function handler(req, res) {
 
       let stepData;
       try {
+        // 尝试解析整个响应
         stepData = JSON.parse(fullContent);
       } catch (error) {
         console.error('Failed to parse JSON:', fullContent);
-        stepData = {
-          title: `第 ${i + 1} 步`,
-          content: fullContent,
-          next_action: 'continue'
-        };
+        // 如果整个响应无法解析，尝试逐个解析JSON对象
+        const jsonObjects = fullContent.match(/\{[^{}]*\}/g);
+        if (jsonObjects && jsonObjects.length > 0) {
+          stepData = JSON.parse(jsonObjects[jsonObjects.length - 1]);
+        } else {
+          // 如果仍然无法解析，使用默认对象
+          stepData = {
+            title: `第 ${i + 1} 步`,
+            content: fullContent,
+            next_action: 'continue'
+          };
+        }
       }
 
       sendEvent('step', stepData);
 
-      messages.push({ role: "assistant", content: stepData });
+      // 确保消息内容始终是字符串
+      messages.push({ role: "assistant", content: JSON.stringify(stepData) });
 
       if (stepData.next_action === "final_answer") break;
     }

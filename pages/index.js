@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import styles from '../styles/Home.module.css';
 
@@ -19,29 +19,31 @@ export default function Home() {
     setTotalTime(null);
     setError(null);
 
-    try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ query, apiKey, model, baseUrl }),
-      });
+    const eventSource = new EventSource(`/api/generate?query=${encodeURIComponent(query)}&apiKey=${encodeURIComponent(apiKey)}&model=${encodeURIComponent(model)}&baseUrl=${encodeURIComponent(baseUrl)}`);
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || 'Failed to generate response');
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.error) {
+        setError(data.error);
+        setIsLoading(false);
+        eventSource.close();
+      } else {
+        setResponse((prevResponse) => [...prevResponse, data]);
+        setTotalTime(data.totalTime);
       }
+    };
 
-      const data = await res.json();
-      setResponse(data.steps);
-      setTotalTime(data.totalTime);
-    } catch (error) {
-      console.error('Error:', error);
-      setError(error.message);
-    } finally {
+    eventSource.onerror = (error) => {
+      console.error('EventSource failed:', error);
+      setError('Failed to connect to the server');
       setIsLoading(false);
-    }
+      eventSource.close();
+    };
+
+    eventSource.addEventListener('close', () => {
+      setIsLoading(false);
+      eventSource.close();
+    });
   };
 
   return (

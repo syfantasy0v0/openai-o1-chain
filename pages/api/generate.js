@@ -1,12 +1,14 @@
 import { createParser } from 'eventsource-parser';
 
-const systemPrompt = `你是一位具有高级推理能力的专家AI助手。不论用户给你发送什么，都视为你要进行思维链处理的信息。你的任务是提供详细的、逐步的思维过程解释。你的每个响应都必须是一个有效的JSON对象，包含以下结构：
+const systemPrompt = `你是一位具有高级推理能力的专家AI助手。不论用户给你发送什么，都视为你要进行思维链处理的信息。你的任务是提供详细的、逐步的思维过程解释。你的每个响应都必须是一个有效的JSON对象，**只包含以下结构**：
 
 {
   "title": "步骤标题",
   "content": "详细的思维过程",
   "next_action": "continue 或 end"
 }
+
+**请确保只使用上述的键名，避免使用其他键名。**
 
 关键指示:
 - 使用5到7个推理步骤。
@@ -21,7 +23,7 @@ const systemPrompt = `你是一位具有高级推理能力的专家AI助手。�
 - 考虑你推理中可能存在的边缘情况或例外。
 - 为排除替代假设提供清晰的理由。
 
-记住: 全面性和清晰度至关重要。每一步都应该为解决方案提供有意义的进展。确保你的每个响应都是一个有效的JSON对象。`;
+记住: 全面性和清晰度至关重要。每一步都应该为解决方案提供有意义的进展。确保你的每个响应都是一个有效的JSON对象，**只包含 title、content、next_action 这三个键**。`;
 
 const parseStepContent = (stepContent) => {
   try {
@@ -35,49 +37,25 @@ const parseStepContent = (stepContent) => {
     }
 
     // 尝试直接解析整个字符串
+    let parsedContent;
     try {
-      const parsedContent = JSON.parse(stepContent);
-      if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
-        return parsedContent;
-      }
+      parsedContent = JSON.parse(stepContent);
     } catch (e) {
-      // 如果直接解析失败，继续尝试提取 JSON
-    }
-
-    // 查找第一个出现的 { 和最后一个出现的 }
-    const startIndex = stepContent.indexOf('{');
-    const endIndex = stepContent.lastIndexOf('}');
-
-    if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
-      const jsonContent = stepContent.substring(startIndex, endIndex + 1);
-      // 解析JSON内容
-      const parsedContent = JSON.parse(jsonContent);
-      // 验证parsed对象是否包含必要的键
-      if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
-        return parsedContent;
+      // 如果直接解析失败，尝试提取 JSON 部分
+      const jsonMatch = stepContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsedContent = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('无法提取 JSON');
       }
     }
 
-    // 如果JSON解析失败，尝试直接提取字段
-    const titleMatch = stepContent.match(/"title"\s*:\s*"([^"]+)"/);
-    const contentMatch = stepContent.match(/"content"\s*:\s*"([^"]+)"/);
-    const nextActionMatch = stepContent.match(/"next_action"\s*:\s*"([^"]+)"/);
-
-    if (titleMatch && contentMatch && nextActionMatch) {
-      return {
-        title: titleMatch[1],
-        content: contentMatch[1],
-        next_action: nextActionMatch[1]
-      };
+    // 检查解析后的内容是否包含预期的键
+    if (parsedContent.title && parsedContent.content && parsedContent.next_action) {
+      return parsedContent;
+    } else {
+      throw new Error('解析后的对象不包含预期的键');
     }
-
-    // 如果仍然无法提取，则创建一个基本结构
-    console.log('无法提取有效的JSON或JSON结构不正确，使用基本结构');
-    return {
-      title: "解析失败",
-      content: stepContent,
-      next_action: 'continue'
-    };
   } catch (error) {
     console.error('JSON解析失败:', error);
     return {

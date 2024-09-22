@@ -5,7 +5,7 @@ import styles from '../styles/Home.module.css';
 const parseResponse = (data) => {
   try {
     let parsedData = typeof data === 'string' ? JSON.parse(data) : data;
-    
+
     // 处理包含 choices 数组的响应
     if (parsedData.choices && Array.isArray(parsedData.choices)) {
       parsedData = parsedData.choices[0].message.content;
@@ -25,29 +25,9 @@ const parseResponse = (data) => {
       }
     }
 
-    // 处理可能包含多个JSON对象的情况
-    if (typeof parsedData === 'string' && parsedData.includes('```json')) {
-      const jsonObjects = parsedData.match(/```json\n([\s\S]*?)\n```/g);
-      if (jsonObjects) {
-        return jsonObjects.map(obj => {
-          const cleanJson = obj.replace(/```json\n|\n```/g, '');
-          return JSON.parse(cleanJson);
-        });
-      }
-    }
-
-    // 处理单个对象的情况
+    // 如果是对象，直接返回
     if (typeof parsedData === 'object') {
-      // 如果对象有 step 和 explanation 键
-      if ('step' in parsedData && 'explanation' in parsedData) {
-        return [{
-          title: `步骤 ${parsedData.step}`,
-          content: parsedData.explanation,
-          next_action: "continue"
-        }];
-      }
-      
-      // 如果对象已经符合我们期望的格式
+      // 如果对象有 title 和 content 键
       if ('title' in parsedData && 'content' in parsedData) {
         return [parsedData];
       }
@@ -82,7 +62,7 @@ const parseResponse = (data) => {
 export default function Home() {
   const [query, setQuery] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-4o');
+  const [model, setModel] = useState('gpt-4');
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com');
   const [response, setResponse] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -100,17 +80,12 @@ export default function Home() {
 
     eventSource.addEventListener('step', (event) => {
       try {
-        const parsedSteps = parseResponse(event.data);
-        setResponse(prevResponse => [...prevResponse, ...parsedSteps]);
+        const parsedStep = parseResponse(event.data)[0];
+        setResponse(prevResponse => [...prevResponse, parsedStep]);
       } catch (error) {
         console.error('处理步骤时出错:', error);
         setError(`处理响应时出错: ${error.message}`);
       }
-    });
-
-    eventSource.addEventListener('totalTime', (event) => {
-      const data = JSON.parse(event.data);
-      setTotalTime(data.time);
     });
 
     eventSource.addEventListener('error', (event) => {
@@ -151,7 +126,7 @@ export default function Home() {
             type="text"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            placeholder="输入模型名称（如 gpt-4o）"
+            placeholder="输入模型名称（如 gpt-4）"
             className={styles.input}
             required
           />
@@ -181,8 +156,8 @@ export default function Home() {
 
         {response.map((step, index) => (
           <div key={index} className={styles.step}>
-            <h3>第 {index + 1} 步: {step.title}</h3>
-            <p>{step.content}</p>
+            <h3>第 {index + 1} 步: {String(step.title)}</h3>
+            <p>{String(step.content)}</p>
             {step.next_action === 'final_answer' && <p className={styles.finalAnswer}>这是最终答案</p>}
           </div>
         ))}
